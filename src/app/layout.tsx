@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Mica | Personal image library",
+  title: "Dưa Hấu !!!",
   description: "A quiet home for your visual archive.",
 };
 
