@@ -1,15 +1,26 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  CSSProperties,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowUpRight,
   AlertTriangle,
+  Columns2,
+  Columns3,
+  Columns4,
   FolderPlus,
   ImagePlus,
   Images,
   Pencil,
   Search as SearchIcon,
   Moon,
+  Square,
   Sun,
   Trash2,
   Upload,
@@ -25,6 +36,13 @@ type ImageItem = {
   height?: number;
 };
 const starterCollections = ["Tất cả", "Chưa phân loại"];
+const columnOptions = [1, 2, 3, 4] as const;
+const columnIcons = {
+  1: Square,
+  2: Columns2,
+  3: Columns3,
+  4: Columns4,
+};
 
 export default function Home() {
   const [images, setImages] = useState<ImageItem[]>([]);
@@ -41,6 +59,7 @@ export default function Home() {
   const [selected, setSelected] = useState<ImageItem | null>(null);
   const [confirmDeleteImage, setConfirmDeleteImage] = useState(false);
   const [deletingImage, setDeletingImage] = useState(false);
+  const [movingImage, setMovingImage] = useState(false);
   const [showCollections, setShowCollections] = useState(false);
   const [newCollection, setNewCollection] = useState("");
   const [editingCollection, setEditingCollection] = useState<string | null>(
@@ -51,6 +70,7 @@ export default function Home() {
     null,
   );
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [mobileColumns, setMobileColumns] = useState(2);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -81,11 +101,17 @@ export default function Home() {
   useEffect(() => {
     const savedTheme = localStorage.getItem("mica-theme");
     if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
+    const savedColumns = Number(localStorage.getItem("mica-columns"));
+    if (columnOptions.some((option) => option === savedColumns))
+      setMobileColumns(savedColumns);
   }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("mica-theme", theme);
   }, [theme]);
+  useEffect(() => {
+    localStorage.setItem("mica-columns", String(mobileColumns));
+  }, [mobileColumns]);
 
   const filteredImages = useMemo(
     () =>
@@ -101,6 +127,7 @@ export default function Home() {
     [activeCollection, images, search],
   );
   const visibleImages = filteredImages.slice(0, displayLimit);
+  const ColumnIcon = columnIcons[mobileColumns as keyof typeof columnIcons];
 
   useEffect(() => {
     setDisplayLimit(60);
@@ -210,6 +237,33 @@ export default function Home() {
     if (activeCollection === collectionToDelete) setActiveCollection("Tất cả");
     setEditingCollection(null);
     setCollectionToDelete(null);
+  }
+  async function moveImage(collection: string) {
+    if (!selected || collection === selected.collection) return;
+    const image = selected;
+    setMovingImage(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/upload", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicId: image.id, collection }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      const moved = { ...image, collection: result.collection as string };
+      setImages((current) =>
+        current.map((item) => (item.id === image.id ? moved : item)),
+      );
+      setSelected(moved);
+      setNotice(`Đã chuyển ảnh sang "${moved.collection}".`);
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Chuyển bộ sưu tập thất bại.",
+      );
+    } finally {
+      setMovingImage(false);
+    }
   }
   async function deleteImage() {
     if (!selected) return;
@@ -329,6 +383,17 @@ export default function Home() {
             </h2>
           </div>
           <div className="gallery-actions">
+            <button
+              className="column-toggle"
+              title={`Đang hiển thị ${mobileColumns} ảnh mỗi hàng`}
+              aria-label={`Đang hiển thị ${mobileColumns} ảnh mỗi hàng, chạm để đổi`}
+              onClick={() =>
+                setMobileColumns((current) => (current % 4) + 1)
+              }
+            >
+              <ColumnIcon size={15} strokeWidth={2} />
+              <span>{mobileColumns}</span>
+            </button>
             <span className="count">
               {filteredImages.length.toString().padStart(2, "0")} ảnh
             </span>
@@ -350,7 +415,10 @@ export default function Home() {
           </div>
         </div>
         {visibleImages.length ? (
-          <div className="grid">
+          <div
+            className="grid"
+            style={{ "--mobile-columns": mobileColumns } as CSSProperties}
+          >
             {visibleImages.map((image, index) => (
               <article
                 className="tile"
@@ -365,10 +433,6 @@ export default function Home() {
                 >
                   <ArrowUpRight size={16} />
                 </button>
-                <div className="tile-info">
-                  <strong>{image.name}</strong>
-                  <small>{image.collection}</small>
-                </div>
               </article>
             ))}
           </div>
@@ -541,11 +605,27 @@ export default function Home() {
               alt={selected.name}
               style={{ width: "100%", maxHeight: "55vh", objectFit: "contain" }}
             />
+            <label className="move-collection">
+              <span>Bộ sưu tập</span>
+              <select
+                value={selected.collection}
+                disabled={movingImage}
+                onChange={(event) => moveImage(event.target.value)}
+              >
+                {collections
+                  .filter((item) => item !== "Tất cả")
+                  .map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+              </select>
+            </label>
             <div className="modal-actions" style={{ marginTop: 18 }}>
               <button
                 className="btn"
                 onClick={() => setConfirmDeleteImage(true)}
-                disabled={deletingImage}
+                disabled={deletingImage || movingImage}
               >
                 Xóa
               </button>

@@ -7,7 +7,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const collectionsPublicId = "mica/_collections";
+const collectionsPublicId = "mica/_collections.json";
 type CollectionStore = {
   collections: string[];
   aliases: Record<string, string>;
@@ -42,7 +42,6 @@ async function writeCollectionStore(store: CollectionStore) {
   await cloudinary.uploader.upload(`data:application/json;base64,${data}`, {
     public_id: collectionsPublicId,
     resource_type: "raw",
-    format: "json",
     overwrite: true,
     invalidate: true,
   });
@@ -224,6 +223,7 @@ export async function PUT(request: Request) {
 
     if (body.action === "add" && name && !store.collections.includes(name)) {
       store.collections.push(name);
+      delete store.aliases[name];
     } else if (
       body.action === "rename" &&
       oldName &&
@@ -236,6 +236,7 @@ export async function PUT(request: Request) {
         item === oldName ? name : item,
       );
       store.aliases[oldName] = name;
+      delete store.aliases[name];
     } else if (
       body.action === "delete" &&
       oldName &&
@@ -256,6 +257,59 @@ export async function PUT(request: Request) {
   } catch {
     return NextResponse.json(
       { error: "Không thể đồng bộ bộ sưu tập." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  if (
+    !process.env.CLOUDINARY_CLOUD_NAME ||
+    !process.env.CLOUDINARY_API_KEY ||
+    !process.env.CLOUDINARY_API_SECRET
+  ) {
+    return NextResponse.json(
+      { error: "Cloudinary chưa được cấu hình. Hãy kiểm tra file .env.local." },
+      { status: 503 },
+    );
+  }
+
+  try {
+    const { publicId, collection } = (await request.json()) as {
+      publicId?: string;
+      collection?: string;
+    };
+    const name = collection?.trim();
+
+    if (!publicId || publicId.length > 500 || publicId.includes("..")) {
+      return NextResponse.json({ error: "Ảnh không hợp lệ." }, { status: 400 });
+    }
+    if (!name || name === "Tất cả" || /[=|]/.test(name)) {
+      return NextResponse.json(
+        { error: "Bộ sưu tập không hợp lệ." },
+        { status: 400 },
+      );
+    }
+
+    const store = await readCollectionStore();
+    // Tên vừa bị đổi/xóa vẫn còn alias, đưa về tên đang thực sự dùng.
+    const target = resolveCollection(name, store.aliases);
+    // GET trả về cả bộ sưu tập suy ra từ folder ảnh, chưa chắc có trong store.
+    if (!store.collections.includes(target)) {
+      store.collections.push(target);
+      await writeCollectionStore(store);
+    }
+
+    await cloudinary.api.update(publicId, {
+      resource_type: "image",
+      type: "upload",
+      context: `collection=${target}`,
+    });
+
+    return NextResponse.json({ id: publicId, collection: target });
+  } catch {
+    return NextResponse.json(
+      { error: "Không thể chuyển bộ sưu tập. Vui lòng thử lại." },
       { status: 500 },
     );
   }
