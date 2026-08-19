@@ -54,14 +54,12 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const savedCollections = localStorage.getItem("mica-collections");
-    if (savedCollections) setCollections(JSON.parse(savedCollections));
-
     fetch("/api/upload")
       .then(async (response) => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error);
-        setImages(result as ImageItem[]);
+        setImages(result.images as ImageItem[]);
+        setCollections(result.collections);
       })
       .catch((error: unknown) => {
         setNotice(
@@ -71,9 +69,6 @@ export default function Home() {
         );
       });
   }, []);
-  useEffect(() => {
-    localStorage.setItem("mica-collections", JSON.stringify(collections));
-  }, [collections]);
   useEffect(() => {
     setCollections((current) => {
       const imageCollections = images.map((image) => image.collection);
@@ -140,28 +135,47 @@ export default function Home() {
     if (event.target.files) uploadFiles(event.target.files);
     event.target.value = "";
   }
-  function addCollection() {
+  async function addCollection() {
     const name = newCollection.trim();
-    if (name && !collections.includes(name)) {
-      setCollections((current) => [...current, name]);
-      setNewCollection("");
-      setShowCollections(false);
-      setActiveCollection(name);
+    if (!name || collections.includes(name)) return;
+    const response = await fetch("/api/upload", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "add", name }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setNotice(result.error || "Không thể tạo bộ sưu tập.");
+      return;
     }
+    setCollections(result.collections);
+    setNewCollection("");
+    setShowCollections(false);
+    setActiveCollection(name);
   }
   function startEditingCollection(name: string) {
     setEditingCollection(name);
     setCollectionDraft(name);
   }
-  function renameCollection() {
+  async function renameCollection() {
     const nextName = collectionDraft.trim();
     if (!editingCollection || !nextName || collections.includes(nextName))
       return;
-    setCollections((current) =>
-      current.map((collection) =>
-        collection === editingCollection ? nextName : collection,
-      ),
-    );
+    const response = await fetch("/api/upload", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "rename",
+        oldName: editingCollection,
+        name: nextName,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setNotice(result.error || "Không thể đổi tên bộ sưu tập.");
+      return;
+    }
+    setCollections(result.collections);
     setImages((current) =>
       current.map((image) =>
         image.collection === editingCollection
@@ -173,11 +187,19 @@ export default function Home() {
     setEditingCollection(null);
     setCollectionDraft("");
   }
-  function deleteCollection() {
+  async function deleteCollection() {
     if (!collectionToDelete) return;
-    setCollections((current) =>
-      current.filter((collection) => collection !== collectionToDelete),
-    );
+    const response = await fetch("/api/upload", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", oldName: collectionToDelete }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setNotice(result.error || "Không thể xóa bộ sưu tập.");
+      return;
+    }
+    setCollections(result.collections);
     setImages((current) =>
       current.map((image) =>
         image.collection === collectionToDelete

@@ -1,6 +1,6 @@
 # Mica
 
-Thư viện ảnh cá nhân dùng Next.js và Cloudinary. Upload ảnh được xử lý ở server route để API secret không bị đưa vào browser. Ảnh và danh sách ảnh được đọc từ Cloudinary nên có thể xem trên nhiều thiết bị.
+Thư viện ảnh cá nhân dùng Next.js và Cloudinary. Upload ảnh được xử lý ở server route để API secret không bị đưa vào browser. Ảnh và bộ sưu tập được lưu trên Cloudinary nên có thể xem và quản lý trên nhiều thiết bị.
 
 ## Chạy local
 
@@ -27,3 +27,4 @@ Lấy các giá trị này từ Cloudinary Console > Dashboard. Không commit `.
 - Tìm kiếm theo tên file
 - Tạo và lọc bộ sưu tập
 - Ảnh được lưu vào folder `mica/<collection>` trên Cloudinary
+- Danh sách bộ sưu tập được đồng bộ qua file dữ liệu trên Cloudinary.

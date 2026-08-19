@@ -7,6 +7,60 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+const collectionsPublicId = "mica/_collections";
+type CollectionStore = {
+  collections: string[];
+  aliases: Record<string, string>;
+};
+
+function defaultCollectionStore(): CollectionStore {
+  return { collections: ["Tất cả", "Chưa phân loại"], aliases: {} };
+}
+
+async function readCollectionStore(): Promise<CollectionStore> {
+  try {
+    const resource = await cloudinary.api.resource(collectionsPublicId, {
+      resource_type: "raw",
+      type: "upload",
+    });
+    const response = await fetch(`${resource.secure_url}?t=${Date.now()}`);
+    if (!response.ok) throw new Error("Unable to read collection store");
+    const value = (await response.json()) as Partial<CollectionStore>;
+    return {
+      collections: Array.isArray(value.collections)
+        ? value.collections
+        : defaultCollectionStore().collections,
+      aliases: value.aliases || {},
+    };
+  } catch {
+    return defaultCollectionStore();
+  }
+}
+
+async function writeCollectionStore(store: CollectionStore) {
+  const data = Buffer.from(JSON.stringify(store)).toString("base64");
+  await cloudinary.uploader.upload(`data:application/json;base64,${data}`, {
+    public_id: collectionsPublicId,
+    resource_type: "raw",
+    format: "json",
+    overwrite: true,
+    invalidate: true,
+  });
+}
+
+function resolveCollection(
+  collection: string,
+  aliases: Record<string, string>,
+) {
+  let current = collection;
+  const visited = new Set<string>();
+  while (aliases[current] && !visited.has(current)) {
+    visited.add(current);
+    current = aliases[current];
+  }
+  return current;
+}
+
 export async function POST(request: Request) {
   if (
     !process.env.CLOUDINARY_CLOUD_NAME ||
@@ -96,42 +150,112 @@ export async function GET() {
       max_results: 500,
       context: true,
     });
+    const store = await readCollectionStore();
 
-    const images = result.resources.map(
-      (resource: {
-        public_id: string;
-        secure_url: string;
-        width?: number;
-        height?: number;
-        format?: string;
-        original_filename?: string;
-        context?: { custom?: { collection?: string } };
-      }) => {
-        const folderCollection = resource.public_id
-          .replace(/^mica\//, "")
-          .split("/")[0];
-        const collection =
-          resource.context?.custom?.collection ||
-          (folderCollection === "chua-phan-loai"
-            ? "Chưa phân loại"
-            : folderCollection);
-        return {
-          id: resource.public_id,
-          url: resource.secure_url,
-          width: resource.width,
-          height: resource.height,
-          format: resource.format,
-          name:
-            resource.original_filename || resource.public_id.split("/").pop(),
-          collection,
-        };
-      },
+    const images: Array<{ collection: string; [key: string]: unknown }> =
+      result.resources.map(
+        (resource: {
+          public_id: string;
+          secure_url: string;
+          width?: number;
+          height?: number;
+          format?: string;
+          original_filename?: string;
+          context?: { custom?: { collection?: string } };
+        }) => {
+          const folderCollection = resource.public_id
+            .replace(/^mica\//, "")
+            .split("/")[0];
+          const collection = resolveCollection(
+            resource.context?.custom?.collection ||
+              (folderCollection === "chua-phan-loai"
+                ? "Chưa phân loại"
+                : folderCollection),
+            store.aliases,
+          );
+          return {
+            id: resource.public_id,
+            url: resource.secure_url,
+            width: resource.width,
+            height: resource.height,
+            format: resource.format,
+            name:
+              resource.original_filename || resource.public_id.split("/").pop(),
+            collection,
+          };
+        },
+      );
+
+    const imageCollections = images.map((image) => image.collection);
+    const collections = [...store.collections, ...imageCollections].filter(
+      (collection, index, all) => all.indexOf(collection) === index,
     );
 
-    return NextResponse.json(images);
+    return NextResponse.json({ images, collections });
   } catch {
     return NextResponse.json(
       { error: "Không thể tải thư viện ảnh. Vui lòng thử lại." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PUT(request: Request) {
+  if (
+    !process.env.CLOUDINARY_CLOUD_NAME ||
+    !process.env.CLOUDINARY_API_KEY ||
+    !process.env.CLOUDINARY_API_SECRET
+  ) {
+    return NextResponse.json(
+      { error: "Cloudinary chưa được cấu hình. Hãy kiểm tra file .env.local." },
+      { status: 503 },
+    );
+  }
+
+  try {
+    const body = (await request.json()) as {
+      action?: "add" | "rename" | "delete";
+      name?: string;
+      oldName?: string;
+    };
+    const store = await readCollectionStore();
+    const name = body.name?.trim();
+    const oldName = body.oldName?.trim();
+
+    if (body.action === "add" && name && !store.collections.includes(name)) {
+      store.collections.push(name);
+    } else if (
+      body.action === "rename" &&
+      oldName &&
+      name &&
+      name !== "Tất cả" &&
+      name !== "Chưa phân loại" &&
+      !store.collections.includes(name)
+    ) {
+      store.collections = store.collections.map((item) =>
+        item === oldName ? name : item,
+      );
+      store.aliases[oldName] = name;
+    } else if (
+      body.action === "delete" &&
+      oldName &&
+      oldName !== "Tất cả" &&
+      oldName !== "Chưa phân loại"
+    ) {
+      store.collections = store.collections.filter((item) => item !== oldName);
+      store.aliases[oldName] = "Chưa phân loại";
+    } else {
+      return NextResponse.json(
+        { error: "Collection không hợp lệ." },
+        { status: 400 },
+      );
+    }
+
+    await writeCollectionStore(store);
+    return NextResponse.json({ collections: store.collections });
+  } catch {
+    return NextResponse.json(
+      { error: "Không thể đồng bộ bộ sưu tập." },
       { status: 500 },
     );
   }
