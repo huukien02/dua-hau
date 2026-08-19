@@ -54,17 +54,35 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem("mica-images");
     const savedCollections = localStorage.getItem("mica-collections");
-    if (saved) setImages(JSON.parse(saved));
     if (savedCollections) setCollections(JSON.parse(savedCollections));
+
+    fetch("/api/upload")
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        setImages(result as ImageItem[]);
+      })
+      .catch((error: unknown) => {
+        setNotice(
+          error instanceof Error
+            ? error.message
+            : "Không thể tải thư viện ảnh.",
+        );
+      });
   }, []);
-  useEffect(() => {
-    localStorage.setItem("mica-images", JSON.stringify(images));
-  }, [images]);
   useEffect(() => {
     localStorage.setItem("mica-collections", JSON.stringify(collections));
   }, [collections]);
+  useEffect(() => {
+    setCollections((current) => {
+      const imageCollections = images.map((image) => image.collection);
+      const next = [...current, ...imageCollections].filter(
+        (collection, index, all) => all.indexOf(collection) === index,
+      );
+      return next.length === current.length ? current : next;
+    });
+  }, [images]);
   useEffect(() => {
     const savedTheme = localStorage.getItem("mica-theme");
     if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);

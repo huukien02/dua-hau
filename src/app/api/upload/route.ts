@@ -49,6 +49,7 @@ export async function POST(request: Request) {
         const upload = cloudinary.uploader.upload_stream(
           {
             folder: `mica/${collection.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+            context: { collection },
           },
           (error, response) =>
             error
@@ -71,6 +72,66 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       { error: "Upload thất bại. Vui lòng thử lại." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function GET() {
+  if (
+    !process.env.CLOUDINARY_CLOUD_NAME ||
+    !process.env.CLOUDINARY_API_KEY ||
+    !process.env.CLOUDINARY_API_SECRET
+  ) {
+    return NextResponse.json(
+      { error: "Cloudinary chưa được cấu hình. Hãy kiểm tra file .env.local." },
+      { status: 503 },
+    );
+  }
+
+  try {
+    const result = await cloudinary.api.resources({
+      type: "upload",
+      prefix: "mica/",
+      max_results: 500,
+      context: true,
+    });
+
+    const images = result.resources.map(
+      (resource: {
+        public_id: string;
+        secure_url: string;
+        width?: number;
+        height?: number;
+        format?: string;
+        original_filename?: string;
+        context?: { custom?: { collection?: string } };
+      }) => {
+        const folderCollection = resource.public_id
+          .replace(/^mica\//, "")
+          .split("/")[0];
+        const collection =
+          resource.context?.custom?.collection ||
+          (folderCollection === "chua-phan-loai"
+            ? "Chưa phân loại"
+            : folderCollection);
+        return {
+          id: resource.public_id,
+          url: resource.secure_url,
+          width: resource.width,
+          height: resource.height,
+          format: resource.format,
+          name:
+            resource.original_filename || resource.public_id.split("/").pop(),
+          collection,
+        };
+      },
+    );
+
+    return NextResponse.json(images);
+  } catch {
+    return NextResponse.json(
+      { error: "Không thể tải thư viện ảnh. Vui lòng thử lại." },
       { status: 500 },
     );
   }
