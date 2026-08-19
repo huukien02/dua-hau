@@ -67,14 +67,13 @@ button { cursor: pointer; }
 .load-more { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; margin-top: 18px; padding: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 13px; }
 .load-more:hover { background: var(--lime); border-color: var(--lime); }
 .load-more span { color: var(--muted); font: 10px "JetBrains Mono", monospace; }
-.tile { background: #e8e5dc; aspect-ratio: 1 / 1.12; position: relative; overflow: hidden; animation: appear .45s both; }
+.tile { background: #e8e5dc; aspect-ratio: 1 / 1.12; position: relative; overflow: hidden; border-radius: 8px; animation: appear .45s both; }
 [data-theme="dark"] .tile { background: #2a302c; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .5s ease; }
 .tile:hover img { transform: scale(1.035); }
-.tile-action { position: absolute; inset: 0; display: block; width: 100%; padding: 10px; border: 0; background: linear-gradient(180deg, rgba(23,25,21,.34), transparent 46%); opacity: 0; transition: opacity .2s ease; }
-.tile:hover .tile-action, .tile-action:focus-visible { opacity: 1; }
-.tile-action-chip { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 30px; height: 30px; background: var(--paper); color: var(--ink); border-radius: 50%; box-shadow: 0 1px 5px rgba(23,25,21,.28); transform: translateY(-3px); transition: transform .2s ease; }
-.tile:hover .tile-action-chip { transform: translateY(0); }
+.tile-action { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; transition: box-shadow .18s ease; }
+.tile-action:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.tile:hover .tile-action { box-shadow: inset 0 0 0 2px var(--ink); }
 .empty { border: 1px solid var(--line); padding: 64px 24px; text-align: center; color: var(--muted); }
 .empty svg { display: block; margin: 0 auto; color: var(--muted); }
 .empty strong { display: block; color: var(--ink); font: 24px "Fraunces", serif; margin-bottom: 8px; }
@@ -135,8 +134,7 @@ button { cursor: pointer; }
 	.column-toggle { display: grid; width: 32px; height: 32px; }
 	.upload-button { padding: 0; width: 32px; height: 32px; }
 	.upload-button span { display: none; }
-	.tile-action { opacity: 1; background: none; }
-	.tile-action-chip { top: 7px; right: 7px; width: 27px; height: 27px; transform: none; }
+	.tile { border-radius: 6px; }
 	.empty { padding: 48px 18px; }
 	.empty strong { font-size: 21px; }
 	.toaster { right: 12px; left: 12px; top: 12px; width: auto; }

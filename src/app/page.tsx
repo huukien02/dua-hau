@@ -10,7 +10,6 @@ import {
   useState,
 } from "react";
 import {
-  ArrowUpRight,
   AlertTriangle,
   Download,
   Columns2,
@@ -472,11 +471,7 @@ export default function Home() {
                   title={`Xem ${image.name}`}
                   aria-label={`Xem ${image.name}`}
                   onClick={() => setSelected(image)}
-                >
-                  <span className="tile-action-chip">
-                    <ArrowUpRight size={15} />
-                  </span>
-                </button>
+                />
               </article>
             ))}
           </div>
