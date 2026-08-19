@@ -24,7 +24,8 @@ Lấy các giá trị này từ Cloudinary Console > Dashboard. Không commit `.
 
 - Upload một hoặc nhiều ảnh bằng kéo-thả
 - Xem ảnh lớn, tải ảnh xuống hoặc xóa khỏi Cloudinary
-- Tìm kiếm theo tên file
-- Tạo và lọc bộ sưu tập
+- Tạo, đổi tên, xóa và lọc bộ sưu tập
+- Chuyển ảnh giữa các bộ sưu tập trong màn hình chi tiết
+- Chọn số ảnh mỗi hàng trên mobile (1-4), lưu lại theo máy
 - Ảnh được lưu vào folder `mica/<collection>` trên Cloudinary
 - Danh sách bộ sưu tập được đồng bộ qua file dữ liệu trên Cloudinary.

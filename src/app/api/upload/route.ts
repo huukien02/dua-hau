@@ -119,6 +119,7 @@ export async function POST(request: Request) {
       width: result.width,
       height: result.height,
       format: result.format,
+      bytes: result.bytes,
       name: file.name,
       collection,
     });
@@ -159,6 +160,7 @@ export async function GET() {
           width?: number;
           height?: number;
           format?: string;
+          bytes?: number;
           original_filename?: string;
           context?: { custom?: { collection?: string } };
         }) => {
@@ -178,6 +180,7 @@ export async function GET() {
             width: resource.width,
             height: resource.height,
             format: resource.format,
+            bytes: resource.bytes,
             name:
               resource.original_filename || resource.public_id.split("/").pop(),
             collection,
