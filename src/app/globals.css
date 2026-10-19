@@ -101,8 +101,7 @@ button { cursor: pointer; }
 .image-modal-meta { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 56px); padding: 4px 9px; border-radius: 999px; background: rgba(23,25,21,.6); backdrop-filter: blur(5px); color: #fff; font: 10px "JetBrains Mono", monospace; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .image-modal-frame { position: relative; display: grid; place-items: center; margin: 0; padding: 0; border-radius: 6px; overflow: hidden; background: var(--accent); }
 .image-modal-close { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(23,25,21,.6); backdrop-filter: blur(5px); color: #fff; }
-.image-modal-close:hover { background: rgba(23,25,21,.85); }
-.image-modal-bar { display: flex; align-items: center; gap: 7px; margin-top: 7px; }
+.image-modal-close:hover { background: rgba(23,25,21,.85); }.image-modal-bar { display: flex; align-items: center; gap: 7px; margin-top: 7px; }
 .image-modal-bar .select-root { flex: 1; }
 .icon-action { flex: 0 0 auto; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--ink); transition: border-color .15s ease; }
 .icon-action:hover:not(:disabled) { border-color: var(--ink); }

@@ -11,6 +11,8 @@ import {
 } from "react";
 import {
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Columns2,
   Columns3,
@@ -98,6 +100,7 @@ export default function Home() {
   const [mobileColumns, setMobileColumns] = useState(2);
   const settingsLoaded = useRef(false);
   const toastId = useRef(0);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -143,20 +146,6 @@ export default function Home() {
   }, [mobileColumns]);
 
   useEffect(() => {
-    if (!selected) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      if (confirmDeleteImage) {
-        if (!deletingImage) setConfirmDeleteImage(false);
-      } else if (!movingImage) {
-        setSelected(null);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [confirmDeleteImage, deletingImage, movingImage, selected]);
-
-  useEffect(() => {
     if (!showCollections) setCollectionFilter("");
   }, [showCollections]);
 
@@ -167,6 +156,48 @@ export default function Home() {
         : images.filter((image) => image.collection === activeCollection),
     [activeCollection, images],
   );
+  // Điều hướng theo danh sách đang lọc; ảnh vừa chuyển sang bộ sưu tập khác
+  // sẽ không còn trong danh sách nên cả hai nút đều tắt.
+  const selectedIndex = selected
+    ? filteredImages.findIndex((image) => image.id === selected.id)
+    : -1;
+  const previousImage =
+    selectedIndex > 0 ? filteredImages[selectedIndex - 1] : null;
+  const nextImage =
+    selectedIndex >= 0 ? (filteredImages[selectedIndex + 1] ?? null) : null;
+  const navigationLocked = movingImage || deletingImage || confirmDeleteImage;
+  const showSibling = useCallback(
+    (target: ImageItem | null) => {
+      if (target && !navigationLocked) setSelected(target);
+    },
+    [navigationLocked],
+  );
+
+  useEffect(() => {
+    if (!selected) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        showSibling(event.key === "ArrowLeft" ? previousImage : nextImage);
+        return;
+      }
+      if (event.key !== "Escape") return;
+      if (confirmDeleteImage) {
+        if (!deletingImage) setConfirmDeleteImage(false);
+      } else if (!movingImage) {
+        setSelected(null);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    confirmDeleteImage,
+    deletingImage,
+    movingImage,
+    nextImage,
+    previousImage,
+    selected,
+    showSibling,
+  ]);
   const visibleImages = filteredImages.slice(0, displayLimit);
   const ColumnIcon = columnIcons[mobileColumns as keyof typeof columnIcons];
   const collectionCounts = useMemo(() => {
@@ -643,7 +674,23 @@ export default function Home() {
             className="modal image-modal"
             onClick={(event) => event.stopPropagation()}
           >
-            <figure className="image-modal-frame">
+            <figure
+              className="image-modal-frame"
+              onTouchStart={(event) => {
+                const touch = event.touches[0];
+                swipeStart.current = { x: touch.clientX, y: touch.clientY };
+              }}
+              onTouchEnd={(event) => {
+                const start = swipeStart.current;
+                swipeStart.current = null;
+                if (!start) return;
+                const touch = event.changedTouches[0];
+                const dx = touch.clientX - start.x;
+                const dy = touch.clientY - start.y;
+                if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+                showSibling(dx > 0 ? previousImage : nextImage);
+              }}
+            >
               <img src={selected.url} alt={selected.name} />
               <figcaption className="image-modal-meta">
                 {[
@@ -663,6 +710,24 @@ export default function Home() {
               </button>
             </figure>
             <div className="image-modal-bar">
+              <button
+                className="icon-action"
+                title="Ảnh trước (←)"
+                aria-label="Ảnh trước"
+                disabled={!previousImage || navigationLocked}
+                onClick={() => showSibling(previousImage)}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                className="icon-action"
+                title="Ảnh tiếp theo (→)"
+                aria-label="Ảnh tiếp theo"
+                disabled={!nextImage || navigationLocked}
+                onClick={() => showSibling(nextImage)}
+              >
+                <ChevronRight size={18} />
+              </button>
               <Select
                 ariaLabel="Chuyển sang bộ sưu tập"
                 value={selected.collection}
