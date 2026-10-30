@@ -20,7 +20,6 @@ import {
   FolderCog,
   FolderPlus,
   ImagePlus,
-  Images,
   Pencil,
   Moon,
   Square,
@@ -70,6 +69,36 @@ const columnIcons = {
   3: Columns3,
   4: Columns4,
 };
+// Miếng dưa hấu có mặt cười, dùng cho logo và màn hình trống.
+function Melon() {
+  return (
+    <svg className="melon" viewBox="0 0 64 48" aria-hidden="true">
+      <g stroke="#3b2a2f" strokeWidth="2.5" strokeLinejoin="round">
+        <path d="M3 8h58a29 29 0 0 1-58 0z" fill="#3fb87a" />
+        <path d="M7.5 8h49a24.5 24.5 0 0 1-49 0z" fill="#c9f2d4" />
+        <path d="M11 8h42a21 21 0 0 1-42 0z" fill="#ff5d73" />
+      </g>
+      <g fill="#3b2a2f">
+        <circle cx="24" cy="16" r="2.8" />
+        <circle cx="40" cy="16" r="2.8" />
+        <ellipse cx="22" cy="31" rx="1.3" ry="2.1" transform="rotate(-20 22 31)" />
+        <ellipse cx="32" cy="34" rx="1.3" ry="2.1" />
+        <ellipse cx="42" cy="31" rx="1.3" ry="2.1" transform="rotate(20 42 31)" />
+      </g>
+      <circle cx="25" cy="15" r="1" fill="#fff" />
+      <circle cx="41" cy="15" r="1" fill="#fff" />
+      <ellipse cx="18.5" cy="21" rx="3.2" ry="1.9" fill="#ffb3c1" />
+      <ellipse cx="45.5" cy="21" rx="3.2" ry="1.9" fill="#ffb3c1" />
+      <path
+        d="M28.5 20q3.5 3.5 7 0"
+        fill="none"
+        stroke="#3b2a2f"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 export default function Home() {
   const [images, setImages] = useState<ImageItem[]>([]);
@@ -388,7 +417,9 @@ export default function Home() {
     <main className="shell">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">H</span>
+          <span className="brand-mark">
+            <Melon />
+          </span>
           <span>DuaHau</span>
         </div>
         <div className="status">
@@ -507,11 +538,10 @@ export default function Home() {
             ))}
           </div>
         ) : (
-          <div className="empty" title="Chưa có ảnh trong thư viện">
-            <Images size={34} strokeWidth={1.4} aria-hidden="true" />
-            <span className="sr-only">
-              Chưa có ảnh trong thư viện. Upload ảnh đầu tiên để bắt đầu.
-            </span>
+          <div className="empty">
+            <Melon />
+            <strong>Chưa có ảnh nào nè!</strong>
+            <p>Bấm &ldquo;Tải ảnh&rdquo; để thêm tấm đầu tiên nha.</p>
           </div>
         )}
         {visibleImages.length < filteredImages.length && (
