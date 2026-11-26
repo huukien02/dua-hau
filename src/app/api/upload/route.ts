@@ -47,6 +47,20 @@ async function writeCollectionStore(store: CollectionStore) {
   });
 }
 
+type CloudinaryResource = {
+  public_id: string;
+  secure_url: string;
+  resource_type: "image" | "video";
+  created_at?: string;
+  width?: number;
+  height?: number;
+  format?: string;
+  bytes?: number;
+  duration?: number;
+  original_filename?: string;
+  context?: { custom?: { collection?: string } };
+};
+
 function resolveCollection(
   collection: string,
   aliases: Record<string, string>,
@@ -60,6 +74,14 @@ function resolveCollection(
   return current;
 }
 
+type ResourceType = "image" | "video";
+
+function parseResourceType(value: unknown): ResourceType | null {
+  return value === "image" || value === "video" ? value : null;
+}
+
+// Trình duyệt gửi file thẳng lên Cloudinary; server chỉ ký các tham số upload
+// nên API secret không bao giờ rời khỏi server.
 export async function POST(request: Request) {
   if (
     !process.env.CLOUDINARY_CLOUD_NAME ||
@@ -73,59 +95,48 @@ export async function POST(request: Request) {
   }
 
   try {
-    const formData = await request.formData();
-    const file = formData.get("file");
-    const collection = String(formData.get("collection") || "library");
+    const body = (await request.json()) as {
+      collection?: string;
+      resourceType?: string;
+    };
+    const collection = body.collection?.trim() || "Chưa phân loại";
+    const resourceType = parseResourceType(body.resourceType);
 
-    if (!(file instanceof File)) {
+    if (!resourceType) {
       return NextResponse.json(
-        { error: "Không tìm thấy file ảnh." },
+        { error: "Chỉ hỗ trợ file ảnh hoặc video." },
         { status: 400 },
       );
     }
-    if (!file.type.startsWith("image/")) {
+    if (collection === "Tất cả" || collection.length > 200 || /[=|]/.test(collection)) {
       return NextResponse.json(
-        { error: "Chỉ hỗ trợ file ảnh." },
-        { status: 400 },
-      );
-    }
-    if (file.size > 15 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: "Ảnh phải nhỏ hơn 15MB." },
+        { error: "Bộ sưu tập không hợp lệ." },
         { status: 400 },
       );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const result = await new Promise<Record<string, unknown>>(
-      (resolve, reject) => {
-        const upload = cloudinary.uploader.upload_stream(
-          {
-            folder: `mica/${collection.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-            context: { collection },
-          },
-          (error, response) =>
-            error
-              ? reject(error)
-              : resolve(response as Record<string, unknown>),
-        );
-        upload.end(buffer);
-      },
+    const params = {
+      timestamp: Math.round(Date.now() / 1000),
+      folder: `mica/${collection.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      context: `collection=${collection}`,
+    };
+    const signature = cloudinary.utils.api_sign_request(
+      params,
+      process.env.CLOUDINARY_API_SECRET,
     );
 
     return NextResponse.json({
-      id: result.public_id,
-      url: result.secure_url,
-      width: result.width,
-      height: result.height,
-      format: result.format,
-      bytes: result.bytes,
-      name: file.name,
+      uploadUrl: `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`,
+      params: {
+        ...params,
+        signature,
+        api_key: process.env.CLOUDINARY_API_KEY,
+      },
       collection,
     });
   } catch {
     return NextResponse.json(
-      { error: "Upload thất bại. Vui lòng thử lại." },
+      { error: "Không thể chuẩn bị upload. Vui lòng thử lại." },
       { status: 500 },
     );
   }
@@ -144,26 +155,25 @@ export async function GET() {
   }
 
   try {
-    const result = await cloudinary.api.resources({
-      type: "upload",
-      prefix: "mica/",
-      max_results: 500,
-      context: true,
-    });
-    const store = await readCollectionStore();
+    const listResources = (resource_type: ResourceType) =>
+      cloudinary.api.resources({
+        resource_type,
+        type: "upload",
+        prefix: "mica/",
+        max_results: 500,
+        context: true,
+      }) as Promise<{ resources: CloudinaryResource[] }>;
+    const [imageResult, videoResult, store] = await Promise.all([
+      listResources("image"),
+      listResources("video"),
+      readCollectionStore(),
+    ]);
+    const resources = [...imageResult.resources, ...videoResult.resources].sort(
+      (a, b) => (b.created_at || "").localeCompare(a.created_at || ""),
+    );
 
     const images: Array<{ collection: string; [key: string]: unknown }> =
-      result.resources.map(
-        (resource: {
-          public_id: string;
-          secure_url: string;
-          width?: number;
-          height?: number;
-          format?: string;
-          bytes?: number;
-          original_filename?: string;
-          context?: { custom?: { collection?: string } };
-        }) => {
+      resources.map((resource) => {
           const folderCollection = resource.public_id
             .replace(/^mica\//, "")
             .split("/")[0];
@@ -177,16 +187,17 @@ export async function GET() {
           return {
             id: resource.public_id,
             url: resource.secure_url,
+            resourceType: resource.resource_type,
             width: resource.width,
             height: resource.height,
             format: resource.format,
             bytes: resource.bytes,
+            duration: resource.duration,
             name:
               resource.original_filename || resource.public_id.split("/").pop(),
             collection,
           };
-        },
-      );
+      });
 
     const imageCollections = images.map((image) => image.collection);
     const collections = [...store.collections, ...imageCollections].filter(
@@ -278,9 +289,10 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const { publicId, collection } = (await request.json()) as {
+    const { publicId, collection, resourceType } = (await request.json()) as {
       publicId?: string;
       collection?: string;
+      resourceType?: string;
     };
     const name = collection?.trim();
 
@@ -304,7 +316,7 @@ export async function PATCH(request: Request) {
     }
 
     await cloudinary.api.update(publicId, {
-      resource_type: "image",
+      resource_type: parseResourceType(resourceType) ?? "image",
       type: "upload",
       context: `collection=${target}`,
     });
@@ -331,14 +343,17 @@ export async function DELETE(request: Request) {
   }
 
   try {
-    const { publicId } = (await request.json()) as { publicId?: string };
+    const { publicId, resourceType } = (await request.json()) as {
+      publicId?: string;
+      resourceType?: string;
+    };
     if (!publicId || publicId.length > 500 || publicId.includes("..")) {
       return NextResponse.json({ error: "Ảnh không hợp lệ." }, { status: 400 });
     }
 
     const result = await cloudinary.uploader.destroy(publicId, {
       invalidate: true,
-      resource_type: "image",
+      resource_type: parseResourceType(resourceType) ?? "image",
     });
 
     if (result.result !== "ok" && result.result !== "not found") {

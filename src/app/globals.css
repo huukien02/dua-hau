@@ -73,6 +73,7 @@ button { cursor: pointer; }
 .tile:hover { transform: rotate(0deg) translate(-3px,-4px) scale(1.03); box-shadow: 7px 8px 0 var(--melon); z-index: 1; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .5s ease; }
 .tile:hover img { transform: scale(1.06); }
+.tile-video-badge { position: absolute; right: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 2px solid var(--outline); border-radius: 999px; background: var(--sun); color: #3b2a2f; font-size: 11px; font-weight: 800; pointer-events: none; }
 .tile-action { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
 .tile-action:focus-visible { outline: 3px dashed var(--melon); outline-offset: -8px; }
 .empty { display: grid; justify-items: center; gap: 10px; padding: 56px 24px; border: 3px dashed var(--outline); border-radius: 28px; background: var(--card); text-align: center; color: var(--muted); }
@@ -114,7 +115,8 @@ button { cursor: pointer; }
 .icon-action:disabled { opacity: .4; cursor: not-allowed; }
 .icon-action.danger { color: var(--melon-deep); }
 .icon-action.danger:hover:not(:disabled) { background: var(--accent); }
-.image-modal-frame img { display: block; width: 100%; max-height: 64vh; object-fit: contain; }
+.image-modal-frame img, .image-modal-frame video { display: block; width: 100%; max-height: 64vh; object-fit: contain; }
+.image-modal-frame video { background: #000; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 2.5px solid var(--outline); border-radius: 999px; background: var(--card); color: var(--ink); padding: 9px 18px; font-size: 14px; font-weight: 800; box-shadow: 3px 3px 0 var(--outline); transition: transform .12s ease, box-shadow .12s ease; }
 .btn:hover:not(:disabled) { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--outline); }
 .btn:active:not(:disabled) { transform: translate(3px,3px); box-shadow: none; }
@@ -161,5 +163,5 @@ button { cursor: pointer; }
 	.modal-backdrop { padding: 15px; }
 	.modal { padding: 22px; box-shadow: 6px 6px 0 var(--melon); }
 	.image-modal { padding: 8px; }
-	.image-modal-frame img { max-height: 66vh; }
+	.image-modal-frame img, .image-modal-frame video { max-height: 66vh; }
 }

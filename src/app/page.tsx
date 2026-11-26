@@ -21,6 +21,7 @@ import {
   FolderPlus,
   ImagePlus,
   Pencil,
+  Play,
   Moon,
   Square,
   Sun,
@@ -36,11 +37,95 @@ type ImageItem = {
   url: string;
   name: string;
   collection: string;
+  resourceType?: "image" | "video";
   width?: number;
   height?: number;
   format?: string;
   bytes?: number;
+  duration?: number;
 };
+type SignedUpload = {
+  uploadUrl: string;
+  params: Record<string, string | number>;
+  collection: string;
+};
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+// Cloudinary yêu cầu mỗi phần (trừ phần cuối) tối thiểu 5MB.
+const CHUNK_BYTES = 20 * 1024 * 1024;
+function isVideo(item: ImageItem) {
+  return item.resourceType === "video";
+}
+// Cloudinary tự tạo ảnh đại diện cho video khi đổi đuôi file sang .jpg.
+function previewUrl(item: ImageItem) {
+  return isVideo(item) ? item.url.replace(/\.[^./]+$/, ".jpg") : item.url;
+}
+function formatDuration(seconds: number) {
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  return `${minutes}:${String(total % 60).padStart(2, "0")}`;
+}
+function sendChunk(
+  url: string,
+  body: FormData,
+  headers: Record<string, string>,
+  onProgress: (loaded: number) => void,
+) {
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    for (const [key, value] of Object.entries(headers))
+      xhr.setRequestHeader(key, value);
+    xhr.upload.onprogress = (event) => onProgress(event.loaded);
+    xhr.onload = () => {
+      let result: Record<string, unknown> = {};
+      try {
+        result = JSON.parse(xhr.responseText);
+      } catch {
+        // Cloudinary luôn trả JSON; nếu không thì báo lỗi chung bên dưới.
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(result);
+      else
+        reject(
+          new Error(
+            (result.error as { message?: string } | undefined)?.message ||
+              "Upload thất bại.",
+          ),
+        );
+    };
+    xhr.onerror = () => reject(new Error("Mất kết nối khi upload."));
+    xhr.send(body);
+  });
+}
+// Gửi file thẳng lên Cloudinary; file lớn được chia nhỏ để không vướng giới
+// hạn kích thước của một request.
+async function uploadToCloudinary(
+  file: File,
+  signed: SignedUpload,
+  onProgress: (fraction: number) => void,
+) {
+  const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const single = file.size <= CHUNK_BYTES;
+  let result: Record<string, unknown> = {};
+  for (let start = 0; start < file.size || start === 0; start += CHUNK_BYTES) {
+    const end = Math.min(start + CHUNK_BYTES, file.size);
+    const body = new FormData();
+    for (const [key, value] of Object.entries(signed.params))
+      body.append(key, String(value));
+    body.append("file", single ? file : file.slice(start, end), file.name);
+    const headers: Record<string, string> = single
+      ? {}
+      : {
+          "X-Unique-Upload-Id": uploadId,
+          "Content-Range": `bytes ${start}-${end - 1}/${file.size}`,
+        };
+    result = await sendChunk(signed.uploadUrl, body, headers, (loaded) =>
+      onProgress(Math.min(1, (start + loaded) / Math.max(1, file.size))),
+    );
+    if (single) break;
+  }
+  return result;
+}
 const starterCollections = ["Tất cả", "Chưa phân loại"];
 const columnOptions = [1, 2, 3, 4] as const;
 function formatSize(bytes: number) {
@@ -109,6 +194,7 @@ export default function Home() {
   const [uploadProgress, setUploadProgress] = useState({
     current: 0,
     total: 0,
+    fraction: 0,
   });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [selected, setSelected] = useState<ImageItem | null>(null);
@@ -262,21 +348,67 @@ export default function Home() {
 
   async function uploadFiles(files: FileList | File[]) {
     if (!files.length) return;
+    const list = Array.from(files);
     setUploading(true);
-    setUploadProgress({ current: 0, total: files.length });
+    setUploadProgress({ current: 0, total: list.length, fraction: 0 });
     try {
-      for (const [index, file] of Array.from(files).entries()) {
-        const body = new FormData();
-        body.append("file", file);
-        body.append(
-          "collection",
-          activeCollection === "Tất cả" ? "Chưa phân loại" : activeCollection,
+      for (const [index, file] of list.entries()) {
+        const resourceType = file.type.startsWith("video/")
+          ? "video"
+          : file.type.startsWith("image/")
+            ? "image"
+            : null;
+        if (!resourceType)
+          throw new Error(`"${file.name}" không phải ảnh hoặc video.`);
+        const limit =
+          resourceType === "video" ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+        if (file.size > limit)
+          throw new Error(
+            `"${file.name}" vượt quá giới hạn ${formatSize(limit)}.`,
+          );
+
+        const signResponse = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resourceType,
+            collection:
+              activeCollection === "Tất cả"
+                ? "Chưa phân loại"
+                : activeCollection,
+          }),
+        });
+        const signed = await signResponse.json();
+        if (!signResponse.ok) throw new Error(signed.error);
+
+        const result = await uploadToCloudinary(
+          file,
+          signed as SignedUpload,
+          (fraction) =>
+            setUploadProgress({
+              current: index,
+              total: list.length,
+              fraction,
+            }),
         );
-        const response = await fetch("/api/upload", { method: "POST", body });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
-        setImages((current) => [result as ImageItem, ...current]);
-        setUploadProgress({ current: index + 1, total: files.length });
+        const item: ImageItem = {
+          id: result.public_id as string,
+          url: result.secure_url as string,
+          resourceType,
+          width: result.width as number | undefined,
+          height: result.height as number | undefined,
+          format: result.format as string | undefined,
+          bytes: result.bytes as number | undefined,
+          duration: result.duration as number | undefined,
+          name: file.name,
+          collection: (signed as SignedUpload).collection,
+        };
+        setImages((current) => [item, ...current]);
+        setUploadProgress({
+          current: index + 1,
+          total: list.length,
+          fraction: 0,
+        });
       }
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Upload thất bại.");
@@ -372,7 +504,11 @@ export default function Home() {
       const response = await fetch("/api/upload", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicId: image.id, collection }),
+        body: JSON.stringify({
+          publicId: image.id,
+          collection,
+          resourceType: image.resourceType,
+        }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
@@ -381,7 +517,7 @@ export default function Home() {
         current.map((item) => (item.id === image.id ? moved : item)),
       );
       setSelected(moved);
-      pushToast(`Đã chuyển ảnh sang "${moved.collection}".`, "success");
+      pushToast(`Đã chuyển sang "${moved.collection}".`, "success");
     } catch (error) {
       pushToast(
         error instanceof Error ? error.message : "Chuyển bộ sưu tập thất bại.",
@@ -397,7 +533,10 @@ export default function Home() {
       const response = await fetch("/api/upload", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicId: selected.id }),
+        body: JSON.stringify({
+          publicId: selected.id,
+          resourceType: selected.resourceType,
+        }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
@@ -407,7 +546,7 @@ export default function Home() {
       setSelected(null);
       setConfirmDeleteImage(false);
     } catch (error) {
-      pushToast(error instanceof Error ? error.message : "Xóa ảnh thất bại.");
+      pushToast(error instanceof Error ? error.message : "Xóa file thất bại.");
     } finally {
       setDeletingImage(false);
     }
@@ -476,16 +615,16 @@ export default function Home() {
         </button>
         <label
           className={`upload-button ${uploading ? "is-uploading" : ""}`}
-          title={uploading ? "Đang tải ảnh lên" : "Tải ảnh lên"}
-          aria-label={uploading ? "Đang tải ảnh lên" : "Tải ảnh lên"}
+          title={uploading ? "Đang tải lên" : "Tải ảnh hoặc video lên"}
+          aria-label={uploading ? "Đang tải lên" : "Tải ảnh hoặc video lên"}
         >
           <Upload size={15} strokeWidth={2} />
-          <span>{uploading ? "Đang tải..." : "Tải ảnh"}</span>
+          <span>{uploading ? "Đang tải..." : "Tải lên"}</span>
           <input
             ref={inputRef}
             className="upload-input"
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             onChange={onSelect}
             disabled={uploading}
@@ -495,21 +634,23 @@ export default function Home() {
       {uploading && (
         <div className="upload-progress" aria-live="polite">
           <div className="upload-progress-label">
-            <span>Đang tải ảnh lên</span>
             <span>
-              {uploadProgress.current}/{uploadProgress.total}
+              Đang tải lên{" "}
+              {Math.min(uploadProgress.current + 1, uploadProgress.total)}/
+              {uploadProgress.total}
             </span>
+            <span>{Math.round(uploadProgress.fraction * 100)}%</span>
           </div>
           <div
             className="progress-track"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={uploadProgress.total}
-            aria-valuenow={uploadProgress.current}
+            aria-valuenow={uploadProgress.current + uploadProgress.fraction}
           >
             <span
               style={{
-                width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
+                width: `${((uploadProgress.current + uploadProgress.fraction) / uploadProgress.total) * 100}%`,
               }}
             />
           </div>
@@ -527,7 +668,13 @@ export default function Home() {
                 key={image.id}
                 style={{ animationDelay: `${index * 50}ms` }}
               >
-                <img src={image.url} alt={image.name} />
+                <img src={previewUrl(image)} alt={image.name} loading="lazy" />
+                {isVideo(image) && (
+                  <span className="tile-video-badge" aria-hidden="true">
+                    <Play size={12} fill="currentColor" />
+                    {image.duration ? formatDuration(image.duration) : null}
+                  </span>
+                )}
                 <button
                   className="tile-action"
                   title={`Xem ${image.name}`}
@@ -541,7 +688,7 @@ export default function Home() {
           <div className="empty">
             <Melon />
             <strong>Chưa có ảnh nào nè!</strong>
-            <p>Bấm &ldquo;Tải ảnh&rdquo; để thêm tấm đầu tiên nha.</p>
+            <p>Bấm &ldquo;Tải lên&rdquo; để thêm ảnh hoặc video đầu tiên nha.</p>
           </div>
         )}
         {visibleImages.length < filteredImages.length && (
@@ -707,6 +854,11 @@ export default function Home() {
             <figure
               className="image-modal-frame"
               onTouchStart={(event) => {
+                // Vuốt trên video là để tua, không phải chuyển file.
+                if (event.target instanceof HTMLVideoElement) {
+                  swipeStart.current = null;
+                  return;
+                }
                 const touch = event.touches[0];
                 swipeStart.current = { x: touch.clientX, y: touch.clientY };
               }}
@@ -721,10 +873,22 @@ export default function Home() {
                 showSibling(dx > 0 ? previousImage : nextImage);
               }}
             >
-              <img src={selected.url} alt={selected.name} />
+              {isVideo(selected) ? (
+                <video
+                  key={selected.id}
+                  src={selected.url}
+                  poster={previewUrl(selected)}
+                  controls
+                  playsInline
+                  preload="metadata"
+                />
+              ) : (
+                <img src={selected.url} alt={selected.name} />
+              )}
               <figcaption className="image-modal-meta">
                 {[
                   selected.format?.toUpperCase(),
+                  selected.duration ? formatDuration(selected.duration) : null,
                   selected.bytes ? formatSize(selected.bytes) : null,
                 ]
                   .filter(Boolean)
@@ -742,8 +906,8 @@ export default function Home() {
             <div className="image-modal-bar">
               <button
                 className="icon-action"
-                title="Ảnh trước (←)"
-                aria-label="Ảnh trước"
+                title="Trước (←)"
+                aria-label="Trước"
                 disabled={!previousImage || navigationLocked}
                 onClick={() => showSibling(previousImage)}
               >
@@ -751,8 +915,8 @@ export default function Home() {
               </button>
               <button
                 className="icon-action"
-                title="Ảnh tiếp theo (→)"
-                aria-label="Ảnh tiếp theo"
+                title="Tiếp theo (→)"
+                aria-label="Tiếp theo"
                 disabled={!nextImage || navigationLocked}
                 onClick={() => showSibling(nextImage)}
               >
@@ -769,8 +933,8 @@ export default function Home() {
               />
               <button
                 className="icon-action danger"
-                title="Xóa ảnh"
-                aria-label="Xóa ảnh"
+                title={isVideo(selected) ? "Xóa video" : "Xóa ảnh"}
+                aria-label={isVideo(selected) ? "Xóa video" : "Xóa ảnh"}
                 onClick={() => setConfirmDeleteImage(true)}
                 disabled={deletingImage || movingImage}
               >
@@ -778,8 +942,8 @@ export default function Home() {
               </button>
               <a
                 className="icon-action"
-                title="Tải ảnh"
-                aria-label="Tải ảnh"
+                title="Tải xuống"
+                aria-label="Tải xuống"
                 href={selected.url.replace(
                   "/upload/",
                   "/upload/fl_attachment/",
@@ -804,9 +968,9 @@ export default function Home() {
             <div className="warning-icon">
               <AlertTriangle size={20} />
             </div>
-            <h3>Xóa ảnh hoàn toàn?</h3>
+            <h3>{isVideo(selected) ? "Xóa video" : "Xóa ảnh"} hoàn toàn?</h3>
             <p>
-              Ảnh sẽ bị xóa khỏi Cloudinary và không thể khôi phục.
+              File sẽ bị xóa khỏi Cloudinary và không thể khôi phục.
               {selected.name && ` (${selected.name})`}
             </p>
             <div className="modal-actions">
