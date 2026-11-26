@@ -225,6 +225,12 @@ export default function Home() {
         if (!response.ok) throw new Error(result.error);
         setImages(result.images as ImageItem[]);
         setCollections(result.collections);
+        // Bộ sưu tập đã lưu có thể đã bị xóa hoặc đổi tên trên máy khác.
+        setActiveCollection((current) =>
+          (result.collections as string[]).includes(current)
+            ? current
+            : "Tất cả",
+        );
       })
       .catch((error: unknown) => {
         pushToast(
@@ -249,6 +255,8 @@ export default function Home() {
     const savedColumns = Number(readSetting("mica-columns"));
     if (columnOptions.some((option) => option === savedColumns))
       setMobileColumns(savedColumns);
+    const savedCollection = readSetting("mica-collection");
+    if (savedCollection) setActiveCollection(savedCollection);
     settingsLoaded.current = true;
   }, []);
   useEffect(() => {
@@ -259,6 +267,10 @@ export default function Home() {
     if (settingsLoaded.current)
       writeSetting("mica-columns", String(mobileColumns));
   }, [mobileColumns]);
+  useEffect(() => {
+    if (settingsLoaded.current)
+      writeSetting("mica-collection", activeCollection);
+  }, [activeCollection]);
 
   useEffect(() => {
     if (!showCollections) setCollectionFilter("");

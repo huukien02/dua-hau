@@ -22,6 +22,10 @@ export function Select({
 }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [placement, setPlacement] = useState<{
+    side: "bottom" | "top";
+    maxHeight: number;
+  }>({ side: "bottom", maxHeight: 300 });
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -53,6 +57,19 @@ export function Select({
     if (disabled) return;
     const index = options.findIndex((option) => option.value === value);
     setActiveIndex(index < 0 ? 0 : index);
+    // Mở lên trên khi phía dưới không đủ chỗ (ví dụ thanh công cụ ở đáy modal).
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const gap = 16;
+      const desired = Math.min(300, window.innerHeight * 0.48);
+      const below = window.innerHeight - rect.bottom - gap;
+      const above = rect.top - gap;
+      const side = below >= desired || below >= above ? "bottom" : "top";
+      setPlacement({
+        side,
+        maxHeight: Math.max(120, Math.min(desired, side === "bottom" ? below : above)),
+      });
+    }
     setOpen(true);
   }
   function close() {
@@ -149,6 +166,8 @@ export function Select({
       {open && (
         <div
           className="select-content"
+          data-side={placement.side}
+          style={{ maxHeight: placement.maxHeight }}
           id={listboxId}
           ref={listRef}
           role="listbox"
